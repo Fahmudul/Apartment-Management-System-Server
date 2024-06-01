@@ -28,6 +28,23 @@ const cookieOptions = {
   secure: process.env.NODE_ENV === "production" ? true : false,
   sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
 };
+
+// Middlewares
+const verifyJWT = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).send({ message: "Unauthorized access" });
+  }
+  const token = authHeader.split(" ")[1];
+
+  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(403).send({ message: "Forbidden access" });
+    }
+    req.decoded = decoded;
+    next();
+  });
+};
 async function run() {
   try {
     const roomCollection = client
@@ -39,7 +56,7 @@ async function run() {
     // await client.db("admin").command({ ping: 1 });
 
     // All Room API
-    app.get("/allRooms", async (req, res) => {
+    app.get("/allRooms", verifyJWT, async (req, res) => {
       const rooms = await roomCollection.find().toArray();
       res.send(rooms);
     });
@@ -47,11 +64,11 @@ async function run() {
     // JWT Token API create jwt token
     app.post("/jwt", async (req, res) => {
       const email = req.body;
-      console.log("email from jwt", email);
+      // console.log("email from jwt", email);
       const token = jwt.sign(email, process.env.ACCESS_TOKEN_SECRET, {
         expiresIn: "10d",
       });
-      console.log(token);
+      // console.log(token);
       res.send(token);
     });
 
