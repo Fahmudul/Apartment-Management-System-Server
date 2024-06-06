@@ -70,10 +70,13 @@ async function run() {
 
     // All Room API
     app.get("/allRooms", verifyJWT, async (req, res) => {
-      const skip = req.query.skip;
-      const limit = req.query.limit;
-      console.log(skip, limit);
-      const rooms = await roomCollection.find().toArray();
+      const skip = parseInt(req.query.skip);
+      const limit = parseInt(req.query.limit);
+      const rooms = await roomCollection
+        .find()
+        .skip((skip - 1) * limit)
+        .limit(limit)
+        .toArray();
       res.send(rooms);
     });
 
