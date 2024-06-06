@@ -45,11 +45,24 @@ const verifyJWT = (req, res, next) => {
     next();
   });
 };
+
+// Verify admin
+const verifyAdmin = async (req, res, next) => {
+  const decodedEmail = req.decoded.email;
+  const query = { email: decodedEmail };
+  const user = await userCollection.findOne(query);
+  if (user?.role !== "admin") {
+    return res.status(403).send({ message: "Forbidden access" });
+  }
+  next();
+};
 async function run() {
   try {
     const roomCollection = client
       .db("CozyNest")
       .collection("AppartmentCollection");
+    const aggrementCollection = client.db("CozyNest").collection("Aggrements");
+    const userCollection = client.db("CozyNest").collection("Users");
     // Connect the client to the server	(optional starting in v4.7)
     // await client.connect();
     // // Send a ping to confirm a successful connection
@@ -61,6 +74,38 @@ async function run() {
       res.send(rooms);
     });
 
+    // Agrement list collection
+    app.post("/aggrements", async (req, res) => {
+      const aggrementDetails = req.body;
+      const result = await aggrementCollection.insertOne(aggrementDetails);
+      res.send(result);
+    });
+
+    // User Collection
+    app.post("/users", async (req, res) => {
+      const user = req.body;
+      const isFound = await userCollection.findOne({ email: user.email });
+      // console.log(isFound);
+      if (isFound) {
+        return res.send({ message: "Already registered!" });
+      }
+      const result = await userCollection.insertOne(user);
+      res.send(result);
+    });
+
+    // User Collection
+    app.get("/users", verifyJWT, verifyAdmin, async (req, res) => {
+      const users = await userCollection.find().toArray();
+      res.send(users);
+    });
+    //Check is admin
+    app.get("/users/:email", async (req, res) => {
+      const email = req.params.email;
+      const query = { email: email };
+      const user = await userCollection.findOne(query);
+      res.send(user);
+    });
+
     // JWT Token API create jwt token
     app.post("/jwt", async (req, res) => {
       const email = req.body;
@@ -70,6 +115,12 @@ async function run() {
       });
       // console.log(token);
       res.send(token);
+    });
+
+    // Number of Appartments
+    app.get("/allAppartments", async (req, res) => {
+      const count = await roomCollection.countDocuments();
+      res.send({ count });
     });
 
     console.log(
