@@ -68,6 +68,10 @@ async function run() {
       .db("CozyNest")
       .collection("AcceptedAggrements");
     const couponCollection = client.db("CozyNest").collection("Coupons");
+    const announcementCollection = client
+      .db("CozyNest")
+      .collection("Announcements");
+    const paymentCollection = client.db("CozyNest").collection("Payments");
     // cosnt
     // Connect the client to the server	(optional starting in v4.7)
     // await client.connect();
@@ -100,14 +104,32 @@ async function run() {
     app.post("/create-payment-intent", async (req, res) => {
       const paymentInfo = req.body;
       const amount = parseInt(paymentInfo.price * 100);
+      console.log(paymentInfo);
       const paymentIntent = await stripe.paymentIntents.create({
         amount: amount,
         currency: "usd",
         payment_method_types: ["card"],
       });
+      console.log(paymentIntent);
       res.send({ clientSecret: paymentIntent.client_secret });
     });
-
+    // Get all payment details
+    app.get("/payments", async (req, res) => {
+      const email = req.query.email;
+      const query = { email: email };
+      const result = await paymentCollection.find(query).toArray();
+      const deletedResult = await acceptedAggrementCollection.deleteOne({
+        customerEmail: email,
+      });
+      res.send(result);
+    });
+    // Add payment to payment collection
+    app.post("/paymentsHistory", async (req, res) => {
+      const payment = req.body;
+      console.log(payment);
+      const result = await paymentCollection.insertOne(payment);
+      res.send(result);
+    });
     // All Room API
     app.get("/allRooms", verifyJWT, async (req, res) => {
       const skip = parseInt(req.query.skip);
@@ -215,8 +237,8 @@ async function run() {
       // console.log(acceptedAggrement);
       // Checking if user is already in accepted collection
       const isFound = await acceptedAggrementCollection.findOne(findEmailQuery);
-      // console.log(!!isFound);
-      if (!!isFound) {
+      console.log(!!isFound);
+      if (!!isFound || action === "accepted") {
         console.log("inside not found");
         const result3 = await acceptedAggrementCollection.insertOne(
           acceptedAggrement
@@ -225,7 +247,7 @@ async function run() {
       const result4 = await aggrementCollection.deleteOne(findEmailQuery);
       res.send(result4);
     });
-    // User Collection
+    //Add  User to Collection
     app.post("/users", async (req, res) => {
       const user = req.body;
       console.log("user", user);
@@ -243,6 +265,21 @@ async function run() {
       const users = await userCollection.find().toArray();
       res.send(users);
     });
+    //Change member role to user
+    app.patch("/users", async (req, res) => {
+      const email = req.query.email;
+      const filter = { email: email };
+
+      // Todo: change room availability status
+      const updatedDoc = {
+        $set: {
+          role: "user",
+        },
+      };
+      const result = await userCollection.updateOne(filter, updatedDoc);
+      res.send(result);
+    });
+
     //Check is admin
     app.get("/users/:email", async (req, res) => {
       const email = req.params.email;
@@ -282,7 +319,17 @@ async function run() {
       const count = await roomCollection.countDocuments();
       res.send({ count });
     });
-
+    //Get all announcements
+    app.get("/announcements", async (req, res) => {
+      const announcements = await announcementCollection.find({}).toArray();
+      res.send(announcements);
+    });
+    // Save announcements to database
+    app.post("/announcements", async (req, res) => {
+      const announcement = req.body;
+      const result = await announcementCollection.insertOne(announcement);
+      res.send(result);
+    });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
     );
