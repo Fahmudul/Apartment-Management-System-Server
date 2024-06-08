@@ -5,7 +5,7 @@ var jwt = require("jsonwebtoken");
 const { MongoClient, ServerApiVersion } = require("mongodb");
 require("dotenv").config();
 //TOdo : Payment API
-
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const port = process.env.PORT || 5000;
 app.use(express.json());
 app.use(
@@ -63,10 +63,36 @@ async function run() {
       .collection("AppartmentCollection");
     const aggrementCollection = client.db("CozyNest").collection("Aggrements");
     const userCollection = client.db("CozyNest").collection("Users");
+    const acceptedAggrementCollection = client
+      .db("CozyNest")
+      .collection("AcceptedAggrements");
+    // cosnt
     // Connect the client to the server	(optional starting in v4.7)
     // await client.connect();
     // // Send a ping to confirm a successful connection
     // await client.db("admin").command({ ping: 1 });
+
+    // JWT Token API create jwt token
+    app.post("/jwt", async (req, res) => {
+      const email = req.body;
+      // console.log("email from jwt", email);
+      const token = jwt.sign(email, process.env.ACCESS_TOKEN_SECRET, {
+        expiresIn: "10d",
+      });
+      // console.log(token);
+      res.send(token);
+    });
+    //Payment API
+    app.post("/create-payment-intent", async (req, res) => {
+      const paymentInfo = req.body;
+      const amount = parseInt(paymentInfo.price * 100);
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amount,
+        currency: "usd",
+        payment_method_types: ["card"],
+      });
+      res.send({ clientSecret: paymentIntent.client_secret });
+    });
 
     // All Room API
     app.get("/allRooms", verifyJWT, async (req, res) => {
@@ -80,13 +106,86 @@ async function run() {
       res.send(rooms);
     });
 
-    // Agrement list collection
-    app.post("/aggrements", async (req, res) => {
+    //Get agreement by email for member only. Used in Payment on client side
+    app.get("/agreements", verifyJWT, async (req, res) => {
+      const email = req.query.email;
+      const query = { customerEmail: email };
+      const result = await acceptedAggrementCollection.findOne(query);
+      // console.log(result);
+      res.send(result);
+    });
+
+    //Get All Agreements
+    app.get("/agreementRequest", async (req, res) => {
+      const result = await aggrementCollection.find().toArray();
+      res.send(result);
+    });
+
+    //Add Agrement in aggrement list collection
+    app.post("/agreements", async (req, res) => {
       const aggrementDetails = req.body;
+      const email = req.query.email;
+      console.log(email);
+      const query = { customerEmail: email };
+      const user = await acceptedAggrementCollection.findOne(query);
+      const alreadyAgreed = await aggrementCollection.findOne(query);
+      console.log("aggreList", user, "alreadyAggrelist", alreadyAgreed);
+      if (user || alreadyAgreed) {
+        return res
+          .status(406)
+          .send({ message: "You can only have one agreement!" });
+      }
       const result = await aggrementCollection.insertOne(aggrementDetails);
       res.send(result);
     });
 
+    // Accept/Decline Agrement
+    app.patch("/agreements", async (req, res) => {
+      const email = req.query.email;
+      const action = req.body.action;
+      // console.log("route hitted");
+      // console.log(email, action);
+      const updatedStatus = {
+        $set: {
+          status: "checked",
+        },
+      };
+      const query = { email: email };
+      if (action === "accepted") {
+        updatedDoc = {
+          $set: {
+            role: "member",
+          },
+        };
+      } else if (action === "declined") {
+        updatedDoc = {
+          $set: {
+            role: "user",
+          },
+        };
+      }
+      const result = await userCollection.updateOne(query, updatedDoc);
+      // Remove aggrement from list
+      const findEmailQuery = { customerEmail: email };
+      const result2 = await aggrementCollection.updateOne(
+        findEmailQuery,
+        updatedStatus
+      );
+      //Get accepted agreements and save to accepted collection
+      const acceptedAggrement = await aggrementCollection.findOne(
+        findEmailQuery
+      );
+      // console.log(acceptedAggrement);
+      // Checking if user is already in accepted collection
+      const isFound = await acceptedAggrementCollection.findOne(findEmailQuery);
+      if (isFound) {
+        const result3 = await acceptedAggrementCollection.insertOne(
+          acceptedAggrement
+        );
+      }
+      const result4 = await aggrementCollection.deleteOne(findEmailQuery);
+      res.send(result4);
+    });
     // User Collection
     app.post("/users", async (req, res) => {
       const user = req.body;
@@ -110,17 +209,6 @@ async function run() {
       const query = { email: email };
       const user = await userCollection.findOne(query);
       res.send(user);
-    });
-
-    // JWT Token API create jwt token
-    app.post("/jwt", async (req, res) => {
-      const email = req.body;
-      // console.log("email from jwt", email);
-      const token = jwt.sign(email, process.env.ACCESS_TOKEN_SECRET, {
-        expiresIn: "10d",
-      });
-      // console.log(token);
-      res.send(token);
     });
 
     // Number of Appartments
