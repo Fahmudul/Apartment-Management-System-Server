@@ -67,6 +67,7 @@ async function run() {
     const acceptedAggrementCollection = client
       .db("CozyNest")
       .collection("AcceptedAggrements");
+    const couponCollection = client.db("CozyNest").collection("Coupons");
     // cosnt
     // Connect the client to the server	(optional starting in v4.7)
     // await client.connect();
@@ -250,6 +251,32 @@ async function run() {
       res.send(user);
     });
 
+    // Save coupon
+    app.post("/coupon", async (req, res) => {
+      const coupon = req.body;
+      const result = await couponCollection.insertOne(coupon);
+      res.send(result);
+    });
+
+    //Get all coupon
+    app.get("/coupon", async (req, res) => {
+      const coupon = await couponCollection.find({}).toArray();
+      res.send(coupon);
+    });
+
+    //Chnage coupon expiry
+    app.patch("/coupon", async (req, res) => {
+      const expirationTime = req.body.newExpriationDate;
+      const couponId = req.body.couponId;
+      const filter = { _id: new ObjectId(couponId) };
+      const updatedTime = {
+        $set: {
+          expriation: expirationTime,
+        },
+      };
+      const result = await couponCollection.updateOne(filter, updatedTime);
+      res.send(result);
+    });
     // Number of Appartments
     app.get("/allAppartments", async (req, res) => {
       const count = await roomCollection.countDocuments();
