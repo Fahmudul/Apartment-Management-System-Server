@@ -189,6 +189,7 @@ async function run() {
     // User Collection
     app.post("/users", async (req, res) => {
       const user = req.body;
+      console.log("user", user);
       const isFound = await userCollection.findOne({ email: user.email });
       // console.log(isFound);
       if (isFound) {
