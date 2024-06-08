@@ -2,7 +2,7 @@ const express = require("express");
 const app = express();
 const cors = require("cors");
 var jwt = require("jsonwebtoken");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 require("dotenv").config();
 //TOdo : Payment API
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
@@ -50,10 +50,11 @@ const verifyJWT = (req, res, next) => {
 const verifyAdmin = async (req, res, next) => {
   const decodedEmail = req.decoded.email;
   const query = { email: decodedEmail };
-  const user = await userCollection.findOne(query);
-  if (user?.role !== "admin") {
-    return res.status(403).send({ message: "Forbidden access" });
-  }
+  console.log(decodedEmail);
+  // const user = await userCollection.findOne(query);
+  // if (user?.role !== "admin") {
+  //   return res.status(403).send({ message: "Forbidden access" });
+  // }
   next();
 };
 async function run() {
@@ -71,6 +72,18 @@ async function run() {
     // await client.connect();
     // // Send a ping to confirm a successful connection
     // await client.db("admin").command({ ping: 1 });
+
+    // Verify admin
+    const verifyAdmin = async (req, res, next) => {
+      const decodedEmail = req.decoded.email;
+      const query = { email: decodedEmail };
+      console.log(decodedEmail);
+      const user = await userCollection.findOne(query);
+      if (user?.role !== "admin") {
+        return res.status(403).send({ message: "Forbidden access" });
+      }
+      next();
+    };
 
     // JWT Token API create jwt token
     app.post("/jwt", async (req, res) => {
@@ -125,26 +138,44 @@ async function run() {
     app.post("/agreements", async (req, res) => {
       const aggrementDetails = req.body;
       const email = req.query.email;
-      console.log(email);
       const query = { customerEmail: email };
+      const roomId = aggrementDetails.roomId;
+      // console.log(roomId);
       const user = await acceptedAggrementCollection.findOne(query);
       const alreadyAgreed = await aggrementCollection.findOne(query);
-      console.log("aggreList", user, "alreadyAggrelist", alreadyAgreed);
+      // console.log("aggreList", user, "alreadyAggrelist", alreadyAgreed);
       if (user || alreadyAgreed) {
         return res
           .status(406)
           .send({ message: "You can only have one agreement!" });
       }
       const result = await aggrementCollection.insertOne(aggrementDetails);
+      //Change room availability status
+      const updatedDoc = {
+        $set: {
+          ready: "Already Booked",
+        },
+      };
+      const filter = { _id: new ObjectId(roomId) };
+      const filter_2 = { roomId };
+      const result2 = await roomCollection.updateOne(filter, updatedDoc);
+      //Update room availability status in aggrement list
+      const updatedAggrementDoc = aggrementCollection.updateOne(
+        filter_2,
+        updatedDoc
+      );
+      // console.log(result, result2);
       res.send(result);
     });
 
     // Accept/Decline Agrement
     app.patch("/agreements", async (req, res) => {
       const email = req.query.email;
+      // console.log(email);
       const action = req.body.action;
-      // console.log("route hitted");
-      // console.log(email, action);
+      const roomId = req.body.roomId;
+      // console.log("route hitted", roomId);
+      console.log(email, action);
       const updatedStatus = {
         $set: {
           status: "checked",
@@ -163,7 +194,12 @@ async function run() {
             role: "user",
           },
         };
+        const filter = { _id: new ObjectId(roomId) };
+        const result2 = await roomCollection.updateOne(filter, {
+          $set: { ready: "Ready For You!" },
+        });
       }
+
       const result = await userCollection.updateOne(query, updatedDoc);
       // Remove aggrement from list
       const findEmailQuery = { customerEmail: email };
@@ -178,7 +214,9 @@ async function run() {
       // console.log(acceptedAggrement);
       // Checking if user is already in accepted collection
       const isFound = await acceptedAggrementCollection.findOne(findEmailQuery);
-      if (!isFound) {
+      // console.log(!!isFound);
+      if (!!isFound) {
+        console.log("inside not found");
         const result3 = await acceptedAggrementCollection.insertOne(
           acceptedAggrement
         );
@@ -191,7 +229,7 @@ async function run() {
       const user = req.body;
       console.log("user", user);
       const isFound = await userCollection.findOne({ email: user.email });
-      // console.log(isFound);
+      console.log(isFound);
       if (isFound) {
         return res.send({ message: "Already registered!" });
       }
