@@ -178,7 +178,7 @@ async function run() {
       // console.log(acceptedAggrement);
       // Checking if user is already in accepted collection
       const isFound = await acceptedAggrementCollection.findOne(findEmailQuery);
-      if (isFound) {
+      if (!isFound) {
         const result3 = await acceptedAggrementCollection.insertOne(
           acceptedAggrement
         );
