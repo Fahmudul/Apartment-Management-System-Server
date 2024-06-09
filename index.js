@@ -46,17 +46,6 @@ const verifyJWT = (req, res, next) => {
   });
 };
 
-// Verify admin
-const verifyAdmin = async (req, res, next) => {
-  const decodedEmail = req.decoded.email;
-  const query = { email: decodedEmail };
-  console.log(decodedEmail);
-  // const user = await userCollection.findOne(query);
-  // if (user?.role !== "admin") {
-  //   return res.status(403).send({ message: "Forbidden access" });
-  // }
-  next();
-};
 async function run() {
   try {
     const roomCollection = client
@@ -82,7 +71,7 @@ async function run() {
     const verifyAdmin = async (req, res, next) => {
       const decodedEmail = req.decoded.email;
       const query = { email: decodedEmail };
-      console.log(decodedEmail);
+
       const user = await userCollection.findOne(query);
       if (user?.role !== "admin") {
         return res.status(403).send({ message: "Forbidden access" });
@@ -93,41 +82,39 @@ async function run() {
     // JWT Token API create jwt token
     app.post("/jwt", async (req, res) => {
       const email = req.body;
-      // console.log("email from jwt", email);
       const token = jwt.sign(email, process.env.ACCESS_TOKEN_SECRET, {
         expiresIn: "10d",
       });
-      // console.log(token);
       res.send(token);
     });
     //Payment API
-    app.post("/create-payment-intent", async (req, res) => {
+    app.post("/create-payment-intent", verifyJWT, async (req, res) => {
       const paymentInfo = req.body;
       const amount = parseInt(paymentInfo.price * 100);
-      console.log(paymentInfo);
       const paymentIntent = await stripe.paymentIntents.create({
         amount: amount,
         currency: "usd",
         payment_method_types: ["card"],
       });
-      console.log(paymentIntent);
       res.send({ clientSecret: paymentIntent.client_secret });
     });
     // Get all payment details
-    app.get("/payments", async (req, res) => {
+    app.get("/payments", verifyJWT, async (req, res) => {
       const email = req.query.email;
       const query = { email: email };
       const result = await paymentCollection.find(query).toArray();
-      const deletedResult = await acceptedAggrementCollection.deleteOne({
-        customerEmail: email,
-      });
+
+
       res.send(result);
     });
     // Add payment to payment collection
-    app.post("/paymentsHistory", async (req, res) => {
+    app.post("/paymentsHistory", verifyJWT, async (req, res) => {
       const payment = req.body;
-      console.log(payment);
+
       const result = await paymentCollection.insertOne(payment);
+      const deletedResult = await acceptedAggrementCollection.deleteOne({
+        customerEmail: payment.email,
+      });
       res.send(result);
     });
     // All Room API
@@ -145,28 +132,30 @@ async function run() {
     //Get agreement by email for member only. Used in Payment on client side
     app.get("/agreements", verifyJWT, async (req, res) => {
       const email = req.query.email;
+
+
       const query = { customerEmail: email };
       const result = await acceptedAggrementCollection.findOne(query);
-      // console.log(result);
+
       res.send(result);
     });
 
     //Get All Agreements
-    app.get("/agreementRequest", async (req, res) => {
+    app.get("/agreementRequest", verifyJWT, verifyAdmin, async (req, res) => {
       const result = await aggrementCollection.find().toArray();
       res.send(result);
     });
 
     //Add Agrement in aggrement list collection
-    app.post("/agreements", async (req, res) => {
+    app.post("/agreements", verifyJWT, async (req, res) => {
       const aggrementDetails = req.body;
       const email = req.query.email;
       const query = { customerEmail: email };
       const roomId = aggrementDetails.roomId;
-      // console.log(roomId);
+
       const user = await acceptedAggrementCollection.findOne(query);
       const alreadyAgreed = await aggrementCollection.findOne(query);
-      // console.log("aggreList", user, "alreadyAggrelist", alreadyAgreed);
+
       if (user || alreadyAgreed) {
         return res
           .status(406)
@@ -187,18 +176,17 @@ async function run() {
         filter_2,
         updatedDoc
       );
-      // console.log(result, result2);
+
       res.send(result);
     });
 
     // Accept/Decline Agrement
-    app.patch("/agreements", async (req, res) => {
+    app.patch("/agreements", verifyJWT, verifyAdmin, async (req, res) => {
       const email = req.query.email;
-      // console.log(email);
+
       const action = req.body.action;
       const roomId = req.body.roomId;
-      // console.log("route hitted", roomId);
-      console.log(email, action);
+
       const updatedStatus = {
         $set: {
           status: "checked",
@@ -234,12 +222,12 @@ async function run() {
       const acceptedAggrement = await aggrementCollection.findOne(
         findEmailQuery
       );
-      // console.log(acceptedAggrement);
+
       // Checking if user is already in accepted collection
       const isFound = await acceptedAggrementCollection.findOne(findEmailQuery);
-      console.log(!!isFound);
+
       if (!!isFound || action === "accepted") {
-        console.log("inside not found");
+
         const result3 = await acceptedAggrementCollection.insertOne(
           acceptedAggrement
         );
@@ -250,9 +238,9 @@ async function run() {
     //Add  User to Collection
     app.post("/users", async (req, res) => {
       const user = req.body;
-      console.log("user", user);
+
       const isFound = await userCollection.findOne({ email: user.email });
-      console.log(isFound);
+
       if (isFound) {
         return res.send({ message: "Already registered!" });
       }
@@ -266,7 +254,7 @@ async function run() {
       res.send(users);
     });
     //Change member role to user
-    app.patch("/users", async (req, res) => {
+    app.patch("/users", verifyJWT, verifyAdmin, async (req, res) => {
       const email = req.query.email;
       const filter = { email: email };
 
@@ -281,15 +269,23 @@ async function run() {
     });
 
     //Check is admin
-    app.get("/users/:email", async (req, res) => {
+    app.get("/users/:email", verifyJWT, async (req, res) => {
       const email = req.params.email;
       const query = { email: email };
       const user = await userCollection.findOne(query);
       res.send(user);
     });
 
+    //Get Accepted user
+    app.get("/acceptedUsers", verifyJWT, async (req, res) => {
+      const email = req.query.email;
+      const query = { customerEmail: email };
+      const result = await acceptedAggrementCollection.findOne(query);
+      res.send(result);
+    });
+
     // Save coupon
-    app.post("/coupon", async (req, res) => {
+    app.post("/coupon", verifyJWT, verifyAdmin, async (req, res) => {
       const coupon = req.body;
       const result = await couponCollection.insertOne(coupon);
       res.send(result);
@@ -302,7 +298,7 @@ async function run() {
     });
 
     //Chnage coupon expiry
-    app.patch("/coupon", async (req, res) => {
+    app.patch("/coupon", verifyJWT, verifyAdmin, async (req, res) => {
       const expirationTime = req.body.newExpriationDate;
       const couponId = req.body.couponId;
       const filter = { _id: new ObjectId(couponId) };
@@ -320,12 +316,12 @@ async function run() {
       res.send({ count });
     });
     //Get all announcements
-    app.get("/announcements", async (req, res) => {
+    app.get("/announcements", verifyJWT, async (req, res) => {
       const announcements = await announcementCollection.find({}).toArray();
       res.send(announcements);
     });
     // Save announcements to database
-    app.post("/announcements", async (req, res) => {
+    app.post("/announcements", verifyJWT, verifyAdmin, async (req, res) => {
       const announcement = req.body;
       const result = await announcementCollection.insertOne(announcement);
       res.send(result);
