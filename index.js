@@ -7,13 +7,17 @@ require("dotenv").config();
 //TOdo : Payment API
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const port = process.env.PORT || 5000;
-app.use(express.json());
 app.use(
   cors({
-    origin: ["http://localhost:5173"],
+    origin: [
+      "http://localhost:5173",
+      "https://cozynest-cbb8e.web.app",
+      "https://cozynest-cbb8e.firebaseapp.com",
+    ],
     credentials: true,
   })
 );
+app.use(express.json());
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.nkzn5jr.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 const client = new MongoClient(uri, {
@@ -104,7 +108,6 @@ async function run() {
       const query = { email: email };
       const result = await paymentCollection.find(query).toArray();
 
-
       res.send(result);
     });
     // Add payment to payment collection
@@ -112,13 +115,11 @@ async function run() {
       const payment = req.body;
 
       const result = await paymentCollection.insertOne(payment);
-      const deletedResult = await acceptedAggrementCollection.deleteOne({
-        customerEmail: payment.email,
-      });
+
       res.send(result);
     });
     // All Room API
-    app.get("/allRooms", verifyJWT, async (req, res) => {
+    app.get("/allRooms", async (req, res) => {
       const skip = parseInt(req.query.skip);
       const limit = parseInt(req.query.limit);
       const rooms = await roomCollection
@@ -132,7 +133,6 @@ async function run() {
     //Get agreement by email for member only. Used in Payment on client side
     app.get("/agreements", verifyJWT, async (req, res) => {
       const email = req.query.email;
-
 
       const query = { customerEmail: email };
       const result = await acceptedAggrementCollection.findOne(query);
@@ -227,7 +227,6 @@ async function run() {
       const isFound = await acceptedAggrementCollection.findOne(findEmailQuery);
 
       if (!!isFound || action === "accepted") {
-
         const result3 = await acceptedAggrementCollection.insertOne(
           acceptedAggrement
         );
@@ -256,14 +255,28 @@ async function run() {
     //Change member role to user
     app.patch("/users", verifyJWT, verifyAdmin, async (req, res) => {
       const email = req.query.email;
-      const filter = { email: email };
 
+      const filter = { email: email };
+      const filter_2 = { customerEmail: email };
+   
       // Todo: change room availability status
       const updatedDoc = {
         $set: {
           role: "user",
         },
       };
+      const findUser = await acceptedAggrementCollection.findOne(filter_2);
+      const bookedRoomId = findUser?.roomId;
+      if (bookedRoomId) {
+        const filter_3 = { _id: new ObjectId(bookedRoomId) };
+        const result2 = await roomCollection.updateOne(filter_3, {
+          $set: { ready: "Ready For You!" },
+        });
+
+        const result3 = await acceptedAggrementCollection.deleteOne(filter_2);
+      }
+
+
       const result = await userCollection.updateOne(filter, updatedDoc);
       res.send(result);
     });
